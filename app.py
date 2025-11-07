@@ -22,14 +22,10 @@ from db import log_audit_entry, audit_collection
 # Optional modules (fallback safe)
 # ------------------------------
 try:
-    from fraud_intelligence import fraud_summary_report  # ✅ New smart fraud engine
+    from fraud_intelligence import fraud_summary_report
 except Exception:
     def fraud_summary_report(file_path: str, extracted_text: str) -> Dict[str, Any]:
-        return {
-            "fraud_score": 0,
-            "overall_fraud_risk": "Unknown",
-            "note": "fraud_intelligence not installed"
-        }
+        return {"fraud_score": 0, "overall_fraud_risk": "Unknown", "note": "fraud_intelligence not installed"}
 
 try:
     from fraud_detector import detect_tampering
@@ -100,10 +96,7 @@ def detect_document_type(text: str) -> str:
         return "PAN Card"
     if "aadhaar" in t or "uidai" in t:
         return "Aadhaar Card"
-    if any(w in t for w in [
-        "education", "experience", "skills", "projects", "intern",
-        "github", "linkedin", "bachelor", "engineer"
-    ]):
+    if any(w in t for w in ["education", "experience", "skills", "projects", "intern", "github", "linkedin", "bachelor", "engineer"]):
         return "Resume"
     return "Unknown"
 
@@ -111,7 +104,7 @@ def detect_document_type(text: str) -> str:
 # --------------------------------------------------------
 # 🚀 FastAPI App Setup
 # --------------------------------------------------------
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.7.2"
 
 app = FastAPI(
     title="KYC-AI OCR API",
@@ -136,21 +129,31 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # --------------------------------------------------------
-# 🩺 Health & Version
+# 🌐 Root & Health Endpoints
 # --------------------------------------------------------
+@app.get("/")
+def root():
+    return {"message": "✅ KYC-AI Backend is running successfully!", "version": APP_VERSION}
+
+
 @app.get("/health")
 def health():
-    """Basic service health check."""
+    """Safe health check (no bool casting)."""
+    mongo_status = False
+    try:
+        mongo_status = audit_collection is not None
+    except Exception:
+        mongo_status = False
+
     return {
         "status": "ok",
-        "mongo": audit_collection is not None,
+        "mongo": mongo_status,
         "version": APP_VERSION
     }
 
 
 @app.get("/version")
 def version():
-    """Return API version."""
     return {"version": APP_VERSION}
 
 
@@ -159,10 +162,6 @@ def version():
 # --------------------------------------------------------
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
-    """
-    Full pipeline:
-    Save → OCR → Detect Type → Structure → Summary → Risk → Explain → Confidence → Fraud → Log
-    """
     t0 = time.time()
     try:
         # Save file
@@ -185,10 +184,7 @@ async def upload_file(file: UploadFile = File(...)):
                 "elapsed_sec": round(time.time() - t0, 2),
             }
 
-        # Type Detection
         doc_type = detect_document_type(extracted_text)
-
-        # Structured Data Extraction
         if doc_type == "PAN Card":
             structured_data = extract_pan_details(extracted_text)
         elif doc_type == "Aadhaar Card":
@@ -198,27 +194,15 @@ async def upload_file(file: UploadFile = File(...)):
         else:
             structured_data = {"Document": "Unknown"}
 
-        # Generate Summary
         summary = generate_summary(structured_data, doc_type)
-
-        # Risk Classification
         risk_assessment = risk_classification(structured_data, doc_type)
-
-        # Explainable AI
         explanation = explain_risk(structured_data, doc_type, risk_assessment, extracted_text)
-
-        # Confidence Scores
         confidence_scores = compute_field_confidence(structured_data, extracted_text)
-
-        # Fraud Intelligence 🔍
         fraud_result = fraud_summary_report(file_path, extracted_text)
 
-        # Quick Visual Tampering Heuristic
         if file_path.lower().endswith((".jpg", ".jpeg", ".png")):
-            tamper_check = detect_tampering(file_path)
-            fraud_result["tamper_analysis"] = tamper_check
+            fraud_result["tamper_analysis"] = detect_tampering(file_path)
 
-        # Log to MongoDB
         try:
             log_audit_entry(file.filename, doc_type, summary, risk_assessment)
         except Exception as e:
@@ -239,45 +223,30 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(
             status_code=500,
-            content={
-                "error": f"❌ Internal error: {str(e)}",
-                "document_type": "Error",
-                "structured_data": {},
-                "summary": {"Fields Extracted": 0, "Confidence": "Low"},
-                "risk_assessment": {"Risk Level": "High", "Reason": "Processing exception"},
-                "fraud_detection": {"Fraud Risk": "Unknown"},
-                "confidence_scores": {},
-                "explanation": {"headline": "System error during processing."},
-                "elapsed_sec": round(time.time() - t0, 2),
-            },
+            content={"error": f"❌ Internal error: {str(e)}"}
         )
 
 
 # --------------------------------------------------------
-# 📜 Audit Log Endpoint
+# 📜 Audit Logs
 # --------------------------------------------------------
 @app.get("/audit/")
 def get_audit_logs():
-    """Return last 10 audit entries."""
     try:
         if audit_collection is None:
             return {"error": "MongoDB not connected"}
-
         logs = list(audit_collection.find().sort("timestamp", -1).limit(10))
         for log in logs:
             log["_id"] = str(log["_id"])
-            if "timestamp" in log and hasattr(log["timestamp"], "strftime"):
-                log["timestamp"] = log["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-
         return {"count": len(logs), "logs": logs}
     except Exception as e:
         return {"error": f"❌ Failed to fetch audit logs: {e}"}
 
 
 # --------------------------------------------------------
-# 🔥 Local / Render Entrypoint
+# 🔥 Render Entrypoint
 # --------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))  # Render injects PORT env var
+    port = int(os.environ.get("PORT", 10000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
