@@ -11,6 +11,7 @@ from typing import Dict, Any
 from assistant import router as assistant_router
 from dashboard_api import router as dashboard_router
 
+
 # ------------------------------
 # Core Components
 # ------------------------------
@@ -232,21 +233,23 @@ async def upload_file(file: UploadFile = File(...)):
 # --------------------------------------------------------
 @app.get("/audit/")
 def get_audit_logs():
+    """Return last 10 audit entries with key metadata."""
     try:
         if audit_collection is None:
             return {"error": "MongoDB not connected"}
+
         logs = list(audit_collection.find().sort("timestamp", -1).limit(10))
+        parsed = []
         for log in logs:
-            log["_id"] = str(log["_id"])
-        return {"count": len(logs), "logs": logs}
+            parsed.append({
+                "id": str(log.get("_id")),
+                "filename": log.get("filename", "Unknown"),
+                "document_type": log.get("document_type", "Unknown"),
+                "risk": log.get("risk_assessment", {}).get("Risk Level", "N/A"),
+                "completeness": log.get("summary", {}).get("Completeness (%)", 0),
+                "confidence": log.get("summary", {}).get("Confidence", "N/A"),
+                "timestamp": log.get("timestamp").strftime("%Y-%m-%d %H:%M:%S") if log.get("timestamp") else "N/A"
+            })
+        return {"count": len(parsed), "logs": parsed}
     except Exception as e:
         return {"error": f"❌ Failed to fetch audit logs: {e}"}
-
-
-# --------------------------------------------------------
-# 🔥 Render Entrypoint
-# --------------------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
