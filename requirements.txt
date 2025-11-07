@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+python-multipart
+pymongo
+pytesseract
+opencv-python
+pillow
+numpy
+scikit-learn
+requests
+deepface
+python-dotenv
