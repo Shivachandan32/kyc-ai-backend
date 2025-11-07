@@ -25,7 +25,11 @@ try:
     from fraud_intelligence import fraud_summary_report  # ✅ New smart fraud engine
 except Exception:
     def fraud_summary_report(file_path: str, extracted_text: str) -> Dict[str, Any]:
-        return {"fraud_score": 0, "overall_fraud_risk": "Unknown", "note": "fraud_intelligence not installed"}
+        return {
+            "fraud_score": 0,
+            "overall_fraud_risk": "Unknown",
+            "note": "fraud_intelligence not installed"
+        }
 
 try:
     from fraud_detector import detect_tampering
@@ -96,7 +100,10 @@ def detect_document_type(text: str) -> str:
         return "PAN Card"
     if "aadhaar" in t or "uidai" in t:
         return "Aadhaar Card"
-    if any(w in t for w in ["education", "experience", "skills", "projects", "intern", "github", "linkedin", "bachelor", "engineer"]):
+    if any(w in t for w in [
+        "education", "experience", "skills", "projects", "intern",
+        "github", "linkedin", "bachelor", "engineer"
+    ]):
         return "Resume"
     return "Unknown"
 
@@ -104,7 +111,7 @@ def detect_document_type(text: str) -> str:
 # --------------------------------------------------------
 # 🚀 FastAPI App Setup
 # --------------------------------------------------------
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 
 app = FastAPI(
     title="KYC-AI OCR API",
@@ -133,11 +140,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # --------------------------------------------------------
 @app.get("/health")
 def health():
-    return {"status": "ok", "mongo": bool(audit_collection), "version": APP_VERSION}
+    """Basic service health check."""
+    return {
+        "status": "ok",
+        "mongo": audit_collection is not None,
+        "version": APP_VERSION
+    }
 
 
 @app.get("/version")
 def version():
+    """Return API version."""
     return {"version": APP_VERSION}
 
 
@@ -259,3 +272,12 @@ def get_audit_logs():
         return {"count": len(logs), "logs": logs}
     except Exception as e:
         return {"error": f"❌ Failed to fetch audit logs: {e}"}
+
+
+# --------------------------------------------------------
+# 🔥 Local / Render Entrypoint
+# --------------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))  # Render injects PORT env var
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
